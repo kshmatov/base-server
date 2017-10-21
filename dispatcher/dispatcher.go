@@ -1,7 +1,9 @@
 package dispatcher
 
 import (
+	"fmt"
 	"io"
+	"strconv"
 	"sync"
 )
 
@@ -38,7 +40,9 @@ func New() *Dispatcher {
 func (d *Dispatcher) run() {
 	select {
 	case x := <-d.income:
+		fmt.Printf("In Run %v: %v\n", x.Reciever, x.Data)
 		d.lock.RLock()
+		fmt.Println("In run.lock " + strconv.FormatUint(x.Reciever, 10))
 		ch, err := d.get(x.Reciever)
 		if err != nil {
 			d.errors <- err
@@ -46,9 +50,15 @@ func (d *Dispatcher) run() {
 			ch <- x.Data
 		}
 		d.lock.RUnlock()
+		fmt.Println("Run.Unlock " + strconv.FormatUint(x.Reciever, 10))
 	case <-d.signal:
 		return
 	}
+}
+
+func (d *Dispatcher) hasItem(id uint64) bool {
+	_, ok := d.items[id]
+	return ok
 }
 
 func (d *Dispatcher) delete(id uint64) {
@@ -126,10 +136,12 @@ func (d *Dispatcher) Close() {
 func (d *Dispatcher) Send(id uint64, data []byte) error {
 	d.lock.RLock()
 	defer d.lock.RUnlock()
+
 	if d.isClosed {
 		return io.EOF
 	}
-	d.income <- Message{id, data}
 
+	d.income <- Message{id, data}
+	fmt.Printf("Sended for %v: %v\n", id, data)
 	return nil
 }
