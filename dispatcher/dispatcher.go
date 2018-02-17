@@ -5,7 +5,13 @@ import (
 	"io"
 	"strconv"
 	"sync"
+	"github.com/pkg/errors"
 )
+
+
+type Handler interface{
+	Handle([]byte) ([]byte, error)
+}
 
 // Message serves for sending data to registered channel
 type Message struct {
@@ -27,9 +33,11 @@ type Dispatcher struct {
 func New() *Dispatcher {
 	d := Dispatcher{
 		lock:     sync.RWMutex{},
+		// Map of channels to handlers
 		items:    make(map[uint64]chan []byte),
-		income:   make(chan Message),
+		// Channel to collect errors
 		errors:   make(chan error),
+		// Just channel to signal for shutdown all handlers
 		signal:   make(chan bool),
 		isClosed: false,
 	}
@@ -93,6 +101,13 @@ func (d *Dispatcher) get(id uint64) (chan []byte, error) {
 	return nil, io.ErrUnexpectedEOF
 }
 
+func (d *Dispatcher) GetHandlerChannel(id uint64)(chan []byte, error) {
+	if v, ok := d.items[id]; ok{
+		return v, nil
+	}
+	return nil, errors.New(fmt.Sprintf("Can't find channel for %v", id))
+}
+
 // Size return count of registered items
 func (d *Dispatcher) Size() int {
 	d.lock.RLock()
@@ -124,11 +139,14 @@ func (d *Dispatcher) Close() {
 	defer d.lock.Unlock()
 
 	close(d.signal)
-	for k := range d.items {
-		d.delete(k)
-	}
 	close(d.errors)
-	close(d.income)
+
+	for _, v := range d.items {
+		close(v)
+	}
+
+	d.items = nil
+
 	d.isClosed = true
 }
 
